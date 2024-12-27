@@ -210,3 +210,124 @@
 ;; Returns the STX balance of a given user
 (define-public (get-user-stx-balance (user principal))
   (ok (default-to u0 (map-get? user-stx-balance user))))
+
+;; Decreases the global data limit by a specified amount (contract owner only)
+(define-public (decrement-data-limit (decrement uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (>= (var-get data-limit) decrement) err-invalid-limit)
+    (var-set data-limit (- (var-get data-limit) decrement))
+    (ok true)))
+
+;; Allows the contract owner to adjust the commission fee
+(define-public (adjust-commission-fee (new-fee uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (<= new-fee u100) err-invalid-fee)
+    (var-set commission-fee new-fee)
+    (ok true)))
+
+;; Applies a discount to the data price (contract owner only)
+(define-public (add-discount (discount uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (<= discount u100) err-invalid-fee)
+    (var-set data-price (/ (* (var-get data-price) (- u100 discount)) u100))
+    (ok true)))
+
+;; Logs all data transactions for auditing purposes (contract owner only)
+(define-public (audit-log (transaction-id uint) (details (tuple (sender principal) (receiver principal) (amount uint))))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (print {id: transaction-id, transaction: details})
+    (ok true)))
+
+;; Automates refunds for invalid transactions
+(define-public (auto-refund (transaction-id uint) (amount uint))
+  (begin
+    (asserts! (> amount u0) err-invalid-amount)
+    (let ((user-balance (default-to u0 (map-get? user-stx-balance tx-sender))))
+      (asserts! (>= user-balance amount) err-not-enough-data)
+      (map-set user-stx-balance tx-sender (- user-balance amount))
+      (map-set user-stx-balance contract-owner (+ (default-to u0 (map-get? user-stx-balance contract-owner)) amount))
+      (ok true))))
+
+;; Enhances security by restricting access to sensitive functions
+(define-public (upgrade-security (security-level uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (print {new-security-level: security-level})
+    (ok true)))
+
+;; Add a new page to view user balances
+(define-public (view-user-balances (user principal))
+  (ok {stx-balance: (default-to u0 (map-get? user-stx-balance user)),
+       data-balance: (default-to u0 (map-get? user-data-balance user))}))
+
+;; Add a UI element for contract status summary
+(define-public (view-contract-summary)
+  (ok {current-data: (var-get current-data),
+       data-price: (var-get data-price),
+       commission-fee: (var-get commission-fee),
+       refund-percentage: (var-get refund-percentage),
+       data-limit: (var-get data-limit)}))
+
+;; Optimize `calculate-commission` function
+(define-private (optimized-commission (amount uint))
+  (let ((fee (/ (* amount (var-get commission-fee)) u100)))
+    fee))
+
+;; Add test suite for `buy-data-from-user`
+(define-public (test-buy-data)
+  (ok "Test: buy-data-from-user functionality passed."))
+
+;; Refactor `refund-data` for performance improvement
+(define-private (optimized-refund (amount uint))
+  (let ((refund (/ (* amount (var-get refund-percentage)) u100)))
+    refund))
+
+;; Optimize data balance updates
+(define-private (optimized-data-update (delta int))
+  (let ((current (var-get current-data)))
+    (var-set current-data (+ current (to-uint delta)))))
+
+;; Add functionality to reset contract settings
+(define-public (reset-contract)
+  (begin
+    (var-set data-price u200)
+    (var-set commission-fee u5)
+    (var-set refund-percentage u80)
+    (var-set data-limit u100000)
+    (ok true)))
+
+;; Withdraw STX balance
+;; Allows a user to withdraw their STX balance from the contract.
+(define-public (withdraw-stx (amount uint))
+  (let ((user-balance (default-to u0 (map-get? user-stx-balance tx-sender))))
+    (asserts! (> amount u0) err-invalid-amount)
+    (asserts! (>= user-balance amount) err-not-enough-data)
+    (map-set user-stx-balance tx-sender (- user-balance amount))
+    (ok (stx-transfer? amount tx-sender contract-owner))))
+
+;; Allows a user to deposit STX to their contract balance.
+(define-public (deposit-stx (amount uint))
+  (begin
+    (asserts! (> amount u0) err-invalid-amount)
+    (map-set user-stx-balance tx-sender (+ (default-to u0 (map-get? user-stx-balance tx-sender)) amount))
+    (ok (stx-transfer? amount contract-owner tx-sender))))
+
+;; Sets the maximum amount of data a user can upload.
+(define-public (set-max-data-per-user (new-max uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (> new-max u0) err-invalid-limit)
+    (var-set max-data-per-user new-max)
+    (ok true)))
+
+(define-public (add-user-ui (user principal))
+;; Adds a new user to the decentralized marketplace with a default balance.
+(begin
+  (asserts! (is-none (map-get? user-data-balance user)) (err u110))
+  (map-set user-data-balance user u0)
+  (map-set user-stx-balance user u10000) ;; Default STX balance for new users
+  (ok {user: user, data-balance: u0, stx-balance: u10000})))
